@@ -237,6 +237,13 @@ func migrateProcessConfig(logger log.Logger, config *app.Config, version string)
 		currentmajor = 7
 	}
 
+	if currentmajor == 7 && targetmajor > 8 {
+		// Migration from version 7 to version 8
+		// Nothing happens
+
+		currentmajor = 8
+	}
+
 	if migrated {
 		logger.Info().WithFields(log.Fields{
 			"from": config.FFVersion,
