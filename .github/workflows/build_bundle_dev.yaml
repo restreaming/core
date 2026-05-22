@@ -14,28 +14,28 @@ jobs:
             matrix:
                 include:
                     - core_os: alpine3.23
-                      ffmpeg: "7.1.1"
+                      ffmpeg: "8.1.1"
                       ffmpeg_os: alpine3.23
                       platforms: linux/amd64,linux/arm64,linux/arm/v7
                       branch: dev
                       prefix:
                       latest: yes
                     - core_os: alpine3.23
-                      ffmpeg: "7.1.1-rpi"
+                      ffmpeg: "8.1.1-rpi"
                       ffmpeg_os: alpine3.23
                       platforms: linux/arm64,linux/arm/v7
                       branch: dev
                       prefix: rpi-
                       latest: yes
                     - core_os: ubuntu24.04
-                      ffmpeg: "7.1.1-vaapi"
+                      ffmpeg: "8.1.1-vaapi"
                       ffmpeg_os: ubuntu24.04
                       platforms: linux/amd64
                       branch: dev
                       prefix: vaapi-
                       latest: yes
                     - core_os: ubuntu24.04
-                      ffmpeg: "7.1.1-cuda"
+                      ffmpeg: "8.1.1-cuda"
                       ffmpeg_os: ubuntu24.04
                       ffmpeg_tags: "-cuda12.9.1"
                       platforms: linux/amd64
