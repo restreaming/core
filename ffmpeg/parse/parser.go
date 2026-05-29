@@ -562,7 +562,7 @@ func (p *parser) Prelude() []string {
 
 	tail := []string{}
 
-	p.prelude.tail.Do(func(l interface{}) {
+	p.prelude.tail.Do(func(l any) {
 		if l == nil {
 			return
 		}
@@ -658,7 +658,7 @@ func (p *parser) Log() []process.Line {
 	p.lock.log.RLock()
 	defer p.lock.log.RUnlock()
 
-	p.log.Do(func(l interface{}) {
+	p.log.Do(func(l any) {
 		if l == nil {
 			return
 		}
@@ -764,7 +764,7 @@ func (p *parser) Report() Report {
 func (p *parser) ReportHistory() []Report {
 	var history = []Report{}
 
-	p.logHistory.Do(func(l interface{}) {
+	p.logHistory.Do(func(l any) {
 		if l == nil {
 			return
 		}
@@ -781,7 +781,7 @@ func (p *parser) TransferReportHistory(dst Parser) error {
 		return fmt.Errorf("the target parser is not of the required type")
 	}
 
-	p.logHistory.Do(func(l interface{}) {
+	p.logHistory.Do(func(l any) {
 		if l == nil {
 			return
 		}

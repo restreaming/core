@@ -69,7 +69,7 @@ func TestParserLongPrelude(t *testing.T) {
 
 	require.Equal(t, 0, len(log))
 
-	for i := 0; i < 150; i++ {
+	for i := range 150 {
 		parser.Parse(fmt.Sprintf("prelude %3d", i))
 	}
 
@@ -89,7 +89,7 @@ func TestParserVeryLongPrelude(t *testing.T) {
 
 	require.Equal(t, 0, len(log))
 
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		parser.Parse(fmt.Sprintf("prelude %3d", i))
 	}
 
@@ -201,9 +201,9 @@ Output #0, hls, to './data/testsrc.m3u8':
 [hls @ 0x7fa969803a00] Opening './data/testsrc.m3u8.tmp' for writing
 frame=   58 fps= 25 q=-1.0 Lsize=N/A time=00:00:02.32 bitrate=N/A speed=0.999x`
 
-	data := strings.Split(rawdata, "\n")
+	data := strings.SplitSeq(rawdata, "\n")
 
-	for _, d := range data {
+	for d := range data {
 		parser.Parse(d)
 	}
 
@@ -260,9 +260,9 @@ Output #0, hls, to './data/testsrc.m3u8':
 [hls @ 0x7fa969803a00] Opening './data/testsrc.m3u8.tmp' for writing
 frame=   58 fps= 25 q=-1.0 Lsize=N/A time=00:00:02.32 bitrate=N/A speed=0.999x`
 
-	data := strings.Split(rawdata, "\n")
+	data := strings.SplitSeq(rawdata, "\n")
 
-	for _, d := range data {
+	for d := range data {
 		parser.Parse(d)
 	}
 
@@ -343,9 +343,9 @@ Output #0, flv, to '/dev/null':
 [https @ 0x557c840f3180] Opening 'https://ch-fra-n16.livespotting.com/vpu/e9slfpe3/z60wzayk_720_100795.ts' for reading
 [info] ffmpeg.progress:{"inputs":[{"index":0,"stream":0,"frame":21,"packet":24,"size_kb":228}],"outputs":[{"index":0,"stream":0,"frame":20,"packet":20,"q":-1.0,"size_kb":562},{"index":1,"stream":0,"frame":24,"packet":24,"q":-1.0,"size_kb":228}],"frame":20,"packet":20,"q":-1.0,"size_kb":789,"time":"0h0m1.8s","speed":0.245,"dup":0,"drop":0}`
 
-	data := strings.Split(rawdata, "\n")
+	data := strings.SplitSeq(rawdata, "\n")
 
-	for _, d := range data {
+	for d := range data {
 		parser.Parse(d)
 	}
 
@@ -426,9 +426,9 @@ ffmpeg.progress:{"inputs":[{"index":0,"stream":0,"frame":16,"packet":20,"size_kb
 [https @ 0x557c840f3180] Opening 'https://ch-fra-n16.livespotting.com/vpu/e9slfpe3/z60wzayk_720_100795.ts' for reading
 ffmpeg.progress:{"inputs":[{"index":0,"stream":0,"frame":21,"packet":24,"size_kb":228}],"outputs":[{"index":0,"stream":0,"frame":20,"packet":20,"q":-1.0,"size_kb":562},{"index":1,"stream":0,"frame":24,"packet":24,"q":-1.0,"size_kb":228}],"frame":20,"packet":20,"q":-1.0,"size_kb":789,"time":"0h0m1.8s","speed":0.245,"dup":0,"drop":0}`
 
-	data := strings.Split(rawdata, "\n")
+	data := strings.SplitSeq(rawdata, "\n")
 
-	for _, d := range data {
+	for d := range data {
 		parser.Parse(d)
 	}
 
@@ -510,9 +510,9 @@ ffmpeg.progress:{"inputs":[{"index":0,"stream":0,"frame":16,"packet":20,"size_kb
 [https @ 0x557c840f3180] Opening 'https://ch-fra-n16.livespotting.com/vpu/e9slfpe3/z60wzayk_720_100795.ts' for reading
 ffmpeg.progress:{"inputs":[{"index":0,"stream":0,"frame":21,"packet":24,"size_kb":228}],"outputs":[{"index":0,"stream":0,"frame":20,"packet":20,"q":-1.0,"size_kb":562},{"index":1,"stream":0,"frame":24,"packet":24,"q":-1.0,"size_kb":228}],"frame":20,"packet":20,"q":-1.0,"size_kb":789,"time":"0h0m1.8s","speed":0.245,"dup":0,"drop":0}`
 
-	data := strings.Split(rawdata, "\n")
+	data := strings.SplitSeq(rawdata, "\n")
 
-	for _, d := range data {
+	for d := range data {
 		parser.Parse(d)
 	}
 
