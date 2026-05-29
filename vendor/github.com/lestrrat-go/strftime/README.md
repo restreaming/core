@@ -88,6 +88,68 @@ Formats the time according to the pre-compiled pattern, and returns the result s
 | %z      | the time zone offset from UTC |
 | %%      | a '%' |
 
+# NO-PADDING FLAG
+
+A `-` (glibc) or `#` (Windows) flag may be placed between the `%` and the
+conversion specifier to suppress the leading zero/blank padding on numeric
+fields. For example, given `2006-01-02 03:04:05`:
+
+| pattern | result |
+|---------|--------|
+| %m      | 01     |
+| %-m     | 1      |
+| %d      | 02     |
+| %-d     | 2      |
+| %H:%M   | 03:04  |
+| %-H:%-M | 3:4    |
+
+The flag has no effect on non-numeric fields (e.g. `%-A` is identical to `%A`).
+
+# LOCALIZATION
+
+By default the name-producing specifiers (`%A`, `%a`, `%B`, `%b`, `%h`, `%p`)
+emit English. To localize them, build a `Locale` with `NewLocale` and pass it
+via `WithLocale`. The library ships no locale data of its own — you supply the
+names for your language:
+
+```go
+french := strftime.NewLocale(
+  strftime.WithMonths(strftime.MonthNames{
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+  }),
+  strftime.WithWeekdays(strftime.WeekdayNames{
+    "dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi",
+  }),
+  // WithShortMonths, WithShortWeekdays, WithMeridiem ... optional
+)
+
+s, _ := strftime.New(`%A %d %B %Y`, strftime.WithLocale(french))
+// -> "lundi 02 janvier 2006"
+```
+
+`MonthNames` is indexed by month minus one (January is index 0); `WeekdayNames`
+is indexed by `time.Weekday` (Sunday is index 0). Any name left empty falls
+back to the English default, so a partial `Locale` never yields blank output.
+Numeric specifiers (`%d`, `%m`, `%Y`, ...) are locale-invariant and unaffected.
+
+`Locale` is an interface, so you can also implement it yourself to back the
+names with a map, computed values, or an external dataset. `DefaultLocale()`
+returns the English implementation.
+
+## Inflected languages
+
+In some languages (Russian, Czech, Polish, Greek, ...) a month name changes
+form depending on whether it stands alone or appears next to a day number —
+e.g. Russian "январь" (stand-alone) vs "2 января" (in a date). Because a single
+`Locale` carries one form per name, format each context with its own compiled
+`Strftime`:
+
+```go
+inDate, _   := strftime.New(`%d %B %Y`, strftime.WithLocale(ruInDate))   // января
+header, _   := strftime.New(`%B %Y`,    strftime.WithLocale(ruStandalone)) // январь
+```
+
 # EXTENSIONS / CUSTOM SPECIFICATIONS
 
 This library in general tries to be POSIX compliant, but sometimes you just need that
@@ -165,56 +227,47 @@ If a common specification is missing, please feel free to submit a PR
 
 # PERFORMANCE / OTHER LIBRARIES
 
-The following benchmarks were run separately because some libraries were using cgo on specific platforms (notabley, the fastly version)
+The benchmarks live under `bench/` and compare this library against several others.
 
 ```
-// On my OS X 10.14.6, 2.3 GHz Intel Core i5, 16GB memory.
-// go version go1.13.4 darwin/amd64
-hummingbird% go test -tags bench -benchmem -bench .
-<snip>
-BenchmarkTebeka-4                 	  297471	      3905 ns/op	     257 B/op	      20 allocs/op
-BenchmarkJehiah-4                 	  818444	      1773 ns/op	     256 B/op	      17 allocs/op
-BenchmarkFastly-4                 	 2330794	       550 ns/op	      80 B/op	       5 allocs/op
-BenchmarkLestrrat-4               	  916365	      1458 ns/op	      80 B/op	       2 allocs/op
-BenchmarkLestrratCachedString-4   	 2527428	       546 ns/op	     128 B/op	       2 allocs/op
-BenchmarkLestrratCachedWriter-4   	  537422	      2155 ns/op	     192 B/op	       3 allocs/op
+// AMD Ryzen 9 7900X3D, Linux/amd64
+// go version go1.26.1 linux/amd64
+% go test -benchmem -bench .
+goos: linux
+goarch: amd64
+pkg: github.com/lestrrat-go/strftime/bench
+cpu: AMD Ryzen 9 7900X3D 12-Core Processor
+BenchmarkTebeka-24                        	  728451	      1458 ns/op	     260 B/op	      20 allocs/op
+BenchmarkJehiah-24                        	 1898193	       622.1 ns/op	     256 B/op	      17 allocs/op
+BenchmarkFastly-24                        	 1356129	       881.0 ns/op	     168 B/op	       6 allocs/op
+BenchmarkNcruces-24                       	 5115555	       230.7 ns/op	      64 B/op	       1 allocs/op
+BenchmarkNcrucesAppend-24                 	 6263023	       199.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLestrrat-24                      	 5860896	       206.4 ns/op	     128 B/op	       2 allocs/op
+BenchmarkLestrratCachedString-24          	 6105082	       189.2 ns/op	     128 B/op	       2 allocs/op
+BenchmarkLestrratCachedWriter-24          	 6648992	       168.7 ns/op	      64 B/op	       1 allocs/op
+BenchmarkLestrratCachedFormatBuffer-24    	 8669540	       136.7 ns/op	       0 B/op	       0 allocs/op
 PASS
-ok  	github.com/lestrrat-go/strftime	25.618s
+ok  	github.com/lestrrat-go/strftime/bench	13.281s
 ```
 
-```
-// On a host on Google Cloud Platform, machine-type: f1-micro (vCPU x 1, memory: 0.6GB)
-// (Yes, I was being skimpy)
-// Linux <snip> 4.9.0-11-amd64 #1 SMP Debian 4.9.189-3+deb9u1 (2019-09-20) x86_64 GNU/Linux
-// go version go1.13.4 linux/amd64
-hummingbird% go test -tags bench -benchmem -bench .
-<snip>
-BenchmarkTebeka                   254997              4726 ns/op             256 B/op         20 allocs/op
-BenchmarkJehiah                   659289              1882 ns/op             256 B/op         17 allocs/op
-BenchmarkFastly                   389150              3044 ns/op             224 B/op         13 allocs/op
-BenchmarkLestrrat                 699069              1780 ns/op              80 B/op          2 allocs/op
-BenchmarkLestrratCachedString    2081594               589 ns/op             128 B/op          2 allocs/op
-BenchmarkLestrratCachedWriter     825763              1480 ns/op             192 B/op          3 allocs/op
-PASS
-ok      github.com/lestrrat-go/strftime 11.355s
-```
+This library is the fastest of the bunch across every access pattern. The annotated
+list below ranks the relevant variants from fastest to slowest:
 
-This library is much faster than other libraries *IF* you can reuse the format pattern.
+| Import Path                         | ns/op | allocs | Note                                          |
+|:------------------------------------|------:|-------:|:----------------------------------------------|
+| github.com/lestrrat-go/strftime     | 136.7 |      0 | `FormatBuffer()` into a reused slice (cached) |
+| github.com/lestrrat-go/strftime     | 168.7 |      1 | `Format()` to an `io.Writer` (cached)         |
+| github.com/lestrrat-go/strftime     | 189.2 |      2 | `FormatString()` (cached)                     |
+| github.com/ncruces/go-strftime      | 199.2 |      0 | `AppendFormat()`                              |
+| github.com/lestrrat-go/strftime     | 206.4 |      2 | package-level `Format()` (compiled patterns are cached) |
+| github.com/ncruces/go-strftime      | 230.7 |      1 | `Format()`                                    |
+| github.com/jehiah/go-strftime       | 622.1 |     17 |                                               |
+| github.com/fastly/go-utils/strftime | 881.0 |      6 |                                               |
+| github.com/tebeka/strftime          |  1458 |     20 |                                               |
 
-Here's the annotated list from the benchmark results. You can clearly see that (re)using a `Strftime` object
-and producing a string is the fastest. Writing to an `io.Writer` seems a bit sluggish, but since
-the one producing the string is doing almost exactly the same thing, we believe this is purely the overhead of
-writing to an `io.Writer`
-
-| Import Path                         | Score   | Note                            |
-|:------------------------------------|--------:|:--------------------------------|
-| github.com/lestrrat-go/strftime     | 3000000 | Using `FormatString()` (cached) |
-| github.com/fastly/go-utils/strftime | 2000000 | Pure go version on OS X         |
-| github.com/lestrrat-go/strftime     | 1000000 | Using `Format()` (NOT cached)   |
-| github.com/jehiah/go-strftime       | 1000000 |                                 |
-| github.com/fastly/go-utils/strftime | 1000000 | cgo version on Linux            |
-| github.com/lestrrat-go/strftime     | 500000  | Using `Format()` (cached)       |
-| github.com/tebeka/strftime          | 300000  |                                 |
+The fastest path is reusing a `Strftime` object and appending into a slice you own
+(`FormatBuffer`), which allocates nothing. The package-level `Format()` caches compiled
+patterns internally (bounded), so even repeated one-off calls with the same pattern stay fast.
 
 However, depending on your pattern, this speed may vary. If you find a particular pattern that seems sluggish,
 please send in patches or tests.

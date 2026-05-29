@@ -2,24 +2,42 @@ package strftime
 
 type Option interface {
 	Name() string
-	Value() interface{}
+	Value() any
 }
 
 type option struct {
 	name  string
-	value interface{}
+	value any
 }
 
-func (o *option) Name() string       { return o.name }
-func (o *option) Value() interface{} { return o.value }
+func (o *option) Name() string { return o.name }
+func (o *option) Value() any   { return o.value }
 
 const optSpecificationSet = `opt-specification-set`
 
-// WithSpecification allows you to specify a custom specification set
+// WithSpecificationSet allows you to specify a custom specification set
 func WithSpecificationSet(ds SpecificationSet) Option {
 	return &option{
 		name:  optSpecificationSet,
 		value: ds,
+	}
+}
+
+const optLocale = `opt-locale`
+
+// WithLocale overrides the name-producing conversion specifiers (%A, %a, %B,
+// %b, %h, %p) with the localized names supplied by loc, which is typically
+// built with NewLocale. Numeric specifiers (%d, %m, %Y, ...) are
+// locale-invariant and are unaffected.
+//
+// Because a Locale supplies one form per name, format a context that needs
+// inflected month names (e.g. "%d %B" vs "%B %Y" in Slavic languages) by
+// compiling a separate Strftime object per context, each with the Locale
+// holding the appropriate form. See the Locale documentation for details.
+func WithLocale(loc Locale) Option {
+	return &option{
+		name:  optLocale,
+		value: loc,
 	}
 }
 

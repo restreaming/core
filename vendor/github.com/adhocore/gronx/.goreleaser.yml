@@ -38,7 +38,7 @@ builds:
 
 archives:
   - id: nix
-    builds: [macOS, linux]
+    ids: [macOS, linux]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     wrap_in_directory: true
     format: tar.gz
@@ -46,7 +46,7 @@ archives:
       - LICENSE
 
   - id: windows
-    builds: [windows]
+    ids: [windows]
     wrap_in_directory: false
     format: zip
     files:

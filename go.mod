@@ -4,15 +4,15 @@ go 1.25.7
 
 require (
 	github.com/99designs/gqlgen v0.17.90
-	github.com/Masterminds/semver/v3 v3.4.0
-	github.com/adhocore/gronx v1.19.6
+	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/adhocore/gronx v1.20.0
 	github.com/andybalholm/brotli v1.2.1
 	github.com/atrox/haikunatorgo/v2 v2.0.1
 	github.com/caddyserver/certmagic v0.25.3
-	github.com/datarhei/gosrt v0.10.0
-	github.com/datarhei/joy4 v0.0.0-20250818192923-6dc77ee81363
+	github.com/datarhei/gosrt v0.11.0
+	github.com/datarhei/joy4 v0.0.0-20260529103716-aae50349bd84
 	github.com/dolthub/swiss v0.2.1
-	github.com/fujiwara/shapeio v1.0.0
+	github.com/fujiwara/shapeio v1.1.0
 	github.com/go-playground/validator/v10 v10.30.2
 	github.com/gobwas/glob v0.2.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -23,13 +23,13 @@ require (
 	github.com/hashicorp/raft-boltdb/v2 v2.3.1
 	github.com/invopop/jsonschema v0.4.0
 	github.com/joho/godotenv v1.5.1
-	github.com/klauspost/compress v1.18.5
+	github.com/klauspost/compress v1.18.6
 	github.com/klauspost/cpuid/v2 v2.3.0
-	github.com/labstack/echo/v4 v4.15.1
-	github.com/lestrrat-go/strftime v1.1.1
+	github.com/labstack/echo/v4 v4.15.2
+	github.com/lestrrat-go/strftime v1.2.0
 	github.com/lithammer/shortuuid/v4 v4.2.0
 	github.com/mattn/go-isatty v0.0.22
-	github.com/minio/minio-go/v7 v7.1.0
+	github.com/minio/minio-go/v7 v7.2.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/sergi/go-diff v1.3.1
@@ -37,14 +37,14 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/echo-swagger v1.5.2
 	github.com/swaggo/swag v1.16.6
-	github.com/tklauser/go-sysconf v0.3.16
+	github.com/tklauser/go-sysconf v0.4.0
 	github.com/vektah/gqlparser/v2 v2.5.33
 	github.com/xeipuuv/gojsonschema v1.2.0
 	go.etcd.io/bbolt v1.4.3
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.50.0
-	golang.org/x/mod v0.35.0
+	golang.org/x/crypto v0.52.0
+	golang.org/x/mod v0.36.0
 	golang.org/x/time v0.15.0
 )
 
@@ -62,7 +62,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
-	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/jsonreference v0.21.5 // indirect
@@ -109,7 +108,7 @@ require (
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/swaggo/swag/v2 v2.0.0-rc5 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
-	github.com/tklauser/numcpus v0.11.0 // indirect
+	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/urfave/cli/v3 v3.8.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
@@ -122,12 +121,13 @@ require (
 	go.uber.org/zap/exp v0.3.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/ini.v1 v1.67.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )

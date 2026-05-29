@@ -22,8 +22,8 @@ var (
 	dayOfMonthZeroPad           = StdlibFormat("02")
 	dayOfMonthSpacePad          = StdlibFormat("_2")
 	ymd                         = StdlibFormat("2006-01-02")
-	twentyFourHourClockZeroPad  = &hourPadded{twelveHour: false, pad: '0'}
-	twelveHourClockZeroPad      = &hourPadded{twelveHour: true, pad: '0'}
+	twentyFourHourClockZeroPad  = StdlibFormat("15")
+	twelveHourClockZeroPad      = StdlibFormat("03")
 	dayOfYear                   = AppendFunc(appendDayOfYear)
 	twentyFourHourClockSpacePad = &hourPadded{twelveHour: false, pad: ' '}
 	twelveHourClockSpacePad     = &hourPadded{twelveHour: true, pad: ' '}
@@ -171,6 +171,49 @@ func (v verbatimw) dump(out io.Writer) {
 	fmt.Fprintf(out, "verbatim: %s", v.s)
 }
 
+// unpadded wraps another Appender and strips the padding from the value it
+// produces. It implements the glibc '-' and Windows '#' flags, which suppress
+// the leading zeros or spaces on numeric fields (e.g. %-d -> "1" instead of
+// "01"). Non-numeric fields are emitted unchanged, matching libc behavior.
+type unpadded struct {
+	inner Appender
+}
+
+func (v unpadded) Append(b []byte, t time.Time) []byte {
+	var buf [64]byte
+	s := v.inner.Append(buf[:0], t)
+
+	// drop leading spaces (space-padded fields such as %e, %k, %l)
+	i := 0
+	for i < len(s) && s[i] == ' ' {
+		i++
+	}
+	s = s[i:]
+
+	// keep a leading sign, if any (e.g. the "+"/"-" of %z)
+	if len(s) > 0 && (s[0] == '+' || s[0] == '-') {
+		b = append(b, s[0])
+		s = s[1:]
+	}
+
+	// drop leading zeros, but always keep at least one digit
+	j := 0
+	for j < len(s)-1 && s[j] == '0' {
+		j++
+	}
+	return append(b, s[j:]...)
+}
+
+func (v unpadded) dump(out io.Writer) {
+	fmt.Fprintf(out, "unpadded[")
+	if d, ok := v.inner.(dumper); ok {
+		d.dump(out)
+	} else {
+		fmt.Fprintf(out, "%#v", v.inner)
+	}
+	fmt.Fprintf(out, "]")
+}
+
 // These words below, as well as any decimal character
 var combineExclusion = []string{
 	"Mon",
@@ -210,8 +253,9 @@ type combiningAppend struct {
 
 func (ca *combiningAppend) Append(w Appender) {
 	if ca.prevCanCombine {
-		if wc, ok := w.(combiner); ok && wc.canCombine() {
-			ca.prev = ca.prev.(combiner).combine(wc)
+		prev, prevOK := ca.prev.(combiner)
+		if wc, ok := w.(combiner); ok && prevOK && wc.canCombine() {
+			ca.prev = prev.combine(wc)
 			ca.list[len(ca.list)-1] = ca.prev
 			return
 		}

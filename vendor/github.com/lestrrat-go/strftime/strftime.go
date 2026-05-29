@@ -6,11 +6,13 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type compileHandler interface {
-	handle(Appender)
+	handleVerbatim(string)
+	handleSpec(Appender)
 }
 
 // compile, and create an appender list
@@ -18,7 +20,11 @@ type appenderListBuilder struct {
 	list *combiningAppend
 }
 
-func (alb *appenderListBuilder) handle(a Appender) {
+func (alb *appenderListBuilder) handleVerbatim(s string) {
+	alb.list.Append(Verbatim(s))
+}
+
+func (alb *appenderListBuilder) handleSpec(a Appender) {
 	alb.list.Append(a)
 }
 
@@ -28,20 +34,22 @@ type appenderExecutor struct {
 	dst []byte
 }
 
-func (ae *appenderExecutor) handle(a Appender) {
+// handleVerbatim appends the static text directly, avoiding the heap
+// allocation that boxing it into a verbatimw Appender would incur on
+// this per-call compile path.
+func (ae *appenderExecutor) handleVerbatim(s string) {
+	ae.dst = append(ae.dst, s...)
+}
+
+func (ae *appenderExecutor) handleSpec(a Appender) {
 	ae.dst = a.Append(ae.dst, ae.t)
 }
 
 func compile(handler compileHandler, p string, ds SpecificationSet) error {
 	for l := len(p); l > 0; l = len(p) {
-		// This is a really tight loop, so we don't even calls to
-		// Verbatim() to cuase extra stuff
-		var verbatim verbatimw
-
 		i := strings.IndexByte(p, '%')
 		if i < 0 {
-			verbatim.s = p
-			handler.handle(&verbatim)
+			handler.handleVerbatim(p)
 			// this is silly, but I don't trust break keywords when there's a
 			// possibility of this piece of code being rearranged
 			p = p[l:]
@@ -55,39 +63,70 @@ func compile(handler compileHandler, p string, ds SpecificationSet) error {
 		// we already know that i < l - 1
 		// everything up to the i is verbatim
 		if i > 0 {
-			verbatim.s = p[:i]
-			handler.handle(&verbatim)
+			handler.handleVerbatim(p[:i])
 			p = p[i:]
 		}
 
-		specification, err := ds.Lookup(p[1])
+		// An optional '-' (glibc) or '#' (Windows) flag between the '%' and
+		// the conversion specifier suppresses padding on numeric fields.
+		specIdx := 1
+		var noPad bool
+		if c := p[1]; c == '-' || c == '#' {
+			if len(p) < 3 {
+				return errors.New(`stray % at the end of pattern`)
+			}
+			noPad = true
+			specIdx = 2
+		}
+
+		specification, err := ds.Lookup(p[specIdx])
 		if err != nil {
 			return fmt.Errorf("pattern compilation failed: %w", err)
 		}
 
-		handler.handle(specification)
-		p = p[2:]
+		if noPad {
+			specification = unpadded{inner: specification}
+		}
+
+		handler.handleSpec(specification)
+		p = p[specIdx+1:]
 	}
 	return nil
 }
 
 func getSpecificationSetFor(options ...Option) (SpecificationSet, error) {
-	var ds SpecificationSet = defaultSpecificationSet
+	ds := defaultSpecificationSet
 	var extraSpecifications []*optSpecificationPair
+	var locale Locale
 	for _, option := range options {
 		switch option.Name() {
 		case optSpecificationSet:
-			ds = option.Value().(SpecificationSet)
+			if v, ok := option.Value().(SpecificationSet); ok {
+				ds = v
+			}
 		case optSpecification:
-			extraSpecifications = append(extraSpecifications, option.Value().(*optSpecificationPair))
+			if v, ok := option.Value().(*optSpecificationPair); ok {
+				extraSpecifications = append(extraSpecifications, v)
+			}
+		case optLocale:
+			if v, ok := option.Value().(Locale); ok {
+				locale = v
+			}
 		}
 	}
 
-	if len(extraSpecifications) > 0 {
+	if locale != nil || len(extraSpecifications) > 0 {
 		// If ds is immutable, we're going to need to create a new
 		// one. oh what a waste!
 		if raw, ok := ds.(*specificationSet); ok && !raw.mutable {
 			ds = NewSpecificationSet()
+		}
+		// Apply the locale first so an explicit WithSpecification can still
+		// override an individual specifier.
+		if locale != nil {
+			if err := applyLocale(ds, locale); err != nil {
+				return nil, err
+			}
 		}
 		for _, v := range extraSpecifications {
 			if err := ds.Set(v.name, v.appender); err != nil {
@@ -99,7 +138,7 @@ func getSpecificationSetFor(options ...Option) (SpecificationSet, error) {
 }
 
 var fmtAppendExecutorPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		var h appenderExecutor
 		h.dst = make([]byte, 0, 32)
 		return &h
@@ -107,7 +146,8 @@ var fmtAppendExecutorPool = sync.Pool{
 }
 
 func getFmtAppendExecutor() *appenderExecutor {
-	return fmtAppendExecutorPool.Get().(*appenderExecutor)
+	e, _ := fmtAppendExecutorPool.Get().(*appenderExecutor)
+	return e
 }
 
 func releasdeFmtAppendExecutor(v *appenderExecutor) {
@@ -116,15 +156,64 @@ func releasdeFmtAppendExecutor(v *appenderExecutor) {
 	fmtAppendExecutorPool.Put(v)
 }
 
+// formatCacheLimit caps the number of distinct patterns Format will keep
+// compiled. The bound keeps memory usage predictable even when patterns are
+// derived from untrusted input; once it is reached, additional patterns are
+// formatted on the fly without being cached.
+const formatCacheLimit = 1024
+
+var (
+	formatCache    sync.Map // pattern string -> *Strftime
+	formatCacheLen atomic.Int64
+)
+
+// cachedStrftime returns a compiled Strftime for the default specification
+// set, reusing a previously compiled one when possible. The boolean result is
+// false (with no error) when the cache is full and the pattern was not already
+// cached, so the caller can fall back to compiling on the fly.
+func cachedStrftime(p string) (*Strftime, bool, error) {
+	if v, ok := formatCache.Load(p); ok {
+		f, _ := v.(*Strftime)
+		return f, true, nil
+	}
+	if formatCacheLen.Load() >= formatCacheLimit {
+		return nil, false, nil
+	}
+
+	f, err := New(p)
+	if err != nil {
+		return nil, false, err
+	}
+	if actual, loaded := formatCache.LoadOrStore(p, f); loaded {
+		cached, _ := actual.(*Strftime)
+		return cached, true, nil
+	}
+	formatCacheLen.Add(1)
+	return f, true, nil
+}
+
 // Format takes the format `s` and the time `t` to produce the
-// format date/time. Note that this function re-compiles the
-// pattern every time it is called.
+// format date/time.
+//
+// When called without options, compiled patterns are cached (up to an
+// internal limit) so that repeated calls with the same pattern avoid
+// recompilation. Calls that pass options always compile on the fly.
 //
 // If you know beforehand that you will be reusing the pattern
 // within your application, consider creating a `Strftime` object
 // and reusing it.
 func Format(p string, t time.Time, options ...Option) (string, error) {
-	// TODO: this may be premature optimization
+	if len(options) == 0 {
+		f, ok, err := cachedStrftime(p)
+		if err != nil {
+			return "", fmt.Errorf("failed to compile format: %w", err)
+		}
+		if ok {
+			return f.FormatString(t), nil
+		}
+		// cache is full: fall through and format on the fly
+	}
+
 	ds, err := getSpecificationSetFor(options...)
 	if err != nil {
 		return "", fmt.Errorf("failed to get specification set: %w", err)
@@ -178,12 +267,12 @@ func (f *Strftime) Pattern() string {
 func (f *Strftime) Format(dst io.Writer, t time.Time) error {
 	const bufSize = 64
 	var b []byte
-	max := len(f.pattern) + 10
-	if max < bufSize {
+	bufLen := len(f.pattern) + 10
+	if bufLen < bufSize {
 		var buf [bufSize]byte
 		b = buf[:0]
 	} else {
-		b = make([]byte, 0, max)
+		b = make([]byte, 0, bufLen)
 	}
 	if _, err := dst.Write(f.format(b, t)); err != nil {
 		return err
@@ -217,12 +306,12 @@ func (f *Strftime) format(b []byte, t time.Time) []byte {
 func (f *Strftime) FormatString(t time.Time) string {
 	const bufSize = 64
 	var b []byte
-	max := len(f.pattern) + 10
-	if max < bufSize {
+	bufLen := len(f.pattern) + 10
+	if bufLen < bufSize {
 		var buf [bufSize]byte
 		b = buf[:0]
 	} else {
-		b = make([]byte, 0, max)
+		b = make([]byte, 0, bufLen)
 	}
 	return string(f.format(b, t))
 }
