@@ -30,7 +30,7 @@ jobs:
 
     docker:
         needs: versions
-        runs-on: [self-hosted]
+        runs-on: ubuntu-latest
         strategy:
             matrix:
                 include:
@@ -79,7 +79,7 @@ jobs:
               uses: docker/metadata-action@v5
               with:
                   images: |
-                      datarhei/core
+                      kingjulian2011/core
                   tags: |
                       type=raw,value=${{ matrix.core }}-ffmpeg${{ matrix.ffmpeg }}${{ matrix.ffmpeg_tags }}-${{ matrix.core_os }}
                       type=raw,value=${{ matrix.prefix }}${{ matrix.core }},enable=${{ matrix.latest == 'yes' }}
