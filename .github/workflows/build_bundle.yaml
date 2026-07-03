@@ -40,7 +40,6 @@ jobs:
                       ffmpeg_os: alpine3.20
                       platforms: linux/amd64,linux/arm64,linux/arm/v7
                       branch: main
-                      prefix:
                       latest: yes
                     - core: ${{ needs.versions.outputs.coreversion }}
                       core_os: alpine3.20
