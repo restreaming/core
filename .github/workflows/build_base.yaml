@@ -16,7 +16,7 @@ jobs:
             - name: Checkout core repo
               uses: actions/checkout@v4
               with:
-                  repository: datarhei/core
+                  repository: restreaming/core
                   path: ./core
 
             - name: Get latest version from core
@@ -30,7 +30,7 @@ jobs:
 
     docker:
         needs: versions
-        runs-on: [self-hosted]
+        runs-on: ubuntu-latest
         strategy:
             matrix:
                 include:
@@ -60,7 +60,7 @@ jobs:
               uses: docker/metadata-action@v5
               with:
                   images: |
-                      datarhei/base
+                      kingjulian2011/base
                   tags: |
                       type=raw,value=core${{ matrix.core }}-${{ matrix.os }}${{ matrix.os_version }}
                       type=raw,value=${{ matrix.os }}-core-${{ matrix.os_version }}-${{ matrix.core}},enable=${{ matrix.latest == 'yes' }}
