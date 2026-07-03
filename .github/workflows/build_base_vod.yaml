@@ -9,7 +9,7 @@ on:
 
 jobs:
     docker:
-        runs-on: [self-hosted]
+        runs-on: ubuntu-latest
         strategy:
             matrix:
                 include:
@@ -35,7 +35,7 @@ jobs:
               uses: docker/metadata-action@v5
               with:
                   images: |
-                      datarhei/base
+                      kingjulian2011/base
                   tags: |
                       type=raw,value=core-${{ matrix.branch }}-${{ matrix.os }}${{ matrix.os_version }}
 
