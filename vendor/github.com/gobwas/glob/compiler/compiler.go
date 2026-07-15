@@ -461,7 +461,7 @@ func compileTreeChildren(tree *ast.Node, sep []rune) ([]match.Matcher, error) {
 func compile(tree *ast.Node, sep []rune) (m match.Matcher, err error) {
 	switch tree.Kind {
 	case ast.KindAnyOf:
-		// todo this could be faster on pattern_alternatives_combine_lite (see glob_test.go)
+		// TODO this could be faster on pattern_alternatives_combine_lite (see glob_test.go)
 		if n := minimizeTree(tree); n != nil {
 			return compile(n, sep)
 		}

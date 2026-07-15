@@ -50,7 +50,7 @@ func (self BTree) Len() int {
 	return self.LengthRunes
 }
 
-// todo?
+// TODO?
 func (self BTree) Index(s string) (int, []int) {
 	return -1, nil
 }
