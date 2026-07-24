@@ -296,6 +296,7 @@ func (r *restream) load() error {
 
 		// Replace all placeholders in the config
 		resolvePlaceholders(t.config, r.replace)
+		removeDuplicateRTMPOutputs(t.config)
 
 		tasks[id] = t
 	}
@@ -474,6 +475,7 @@ func (r *restream) createTask(config *app.Config) (*task, error) {
 	}
 
 	resolvePlaceholders(t.config, r.replace)
+	removeDuplicateRTMPOutputs(t.config)
 
 	err := r.resolveAddresses(r.tasks, t.config)
 	if err != nil {
@@ -512,6 +514,61 @@ func (r *restream) createTask(config *app.Config) (*task, error) {
 	t.valid = true
 
 	return t, nil
+}
+
+// removeDuplicateRTMPOutputs prevents an ingest pipeline from publishing back
+// to the RTMP channel it is consuming. The source publisher already owns that
+// channel, so the duplicate tee branch would be rejected by the RTMP server
+// and make the whole FFmpeg process fail. Other output branches are retained.
+func removeDuplicateRTMPOutputs(config *app.Config) {
+	inputs := make(map[string]struct{})
+	for _, input := range config.Input {
+		u, err := url.Parse(input.Address)
+		if err != nil || u.Scheme != "rtmp" {
+			continue
+		}
+
+		inputs[u.Scheme+"://"+u.Host+u.RawPath+"?"+u.RawQuery] = struct{}{}
+	}
+
+	if len(inputs) == 0 {
+		return
+	}
+
+	for i := range config.Output {
+		branches := strings.Split(config.Output[i].Address, "|")
+		if len(branches) < 2 {
+			continue
+		}
+
+		filtered := branches[:0]
+		removed := false
+		for _, branch := range branches {
+			address := branch
+			if end := strings.LastIndex(address, "]"); strings.HasPrefix(address, "[") && end >= 0 {
+				address = address[end+1:]
+			}
+
+			u, err := url.Parse(address)
+			key := ""
+			if err == nil && u.Scheme == "rtmp" {
+				key = u.Scheme + "://" + u.Host + u.RawPath + "?" + u.RawQuery
+			}
+
+			if key != "" {
+				if _, duplicate := inputs[key]; duplicate {
+					removed = true
+					continue
+				}
+			}
+
+			filtered = append(filtered, branch)
+		}
+
+		if removed && len(filtered) > 0 {
+			config.Output[i].Address = strings.Join(filtered, "|")
+		}
+	}
 }
 
 func (r *restream) setCleanup(id string, config *app.Config) {
