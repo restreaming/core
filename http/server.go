@@ -168,7 +168,7 @@ func NewServer(config Config) (Server, error) {
 	s.filesystems = map[string]*filesystem{}
 
 	corsPrefixes := map[string][]string{
-		"/api": {"*"},
+		"/engine": {"*"},
 	}
 
 	for _, fs := range config.Filesystems {
@@ -318,7 +318,7 @@ func NewServer(config Config) (Server, error) {
 		Restream:  config.Restream,
 		Monitor:   config.Metrics,
 		LogBuffer: config.LogBuffer,
-	}, "/api/graph/query")
+	}, "/engine/graph/query")
 
 	s.gzip.mimetypes = []string{
 		"text/plain",
@@ -410,7 +410,7 @@ func (s *server) setRoutes() {
 	})
 
 	// API router grouo
-	api := s.router.Group("/api")
+	api := s.router.Group("/engine")
 
 	if s.middleware.iplimit != nil {
 		api.Use(s.middleware.iplimit)
@@ -421,14 +421,14 @@ func (s *server) setRoutes() {
 		api.Use(s.middleware.accessJWT)
 
 		// The login endpoint should not be blocked by auth
-		s.router.POST("/api/login", s.handler.jwt.LoginHandler)
-		s.router.GET("/api/login/refresh", s.handler.jwt.RefreshHandler, s.middleware.refreshJWT)
+		s.router.POST("/engine/login", s.handler.jwt.LoginHandler)
+		s.router.GET("/engine/login/refresh", s.handler.jwt.RefreshHandler, s.middleware.refreshJWT)
 	}
 
 	api.GET("", s.handler.about.About)
 
 	// Swagger API documentation router group
-	doc := s.router.Group("/api/swagger/*")
+	doc := s.router.Group("/engine/swagger/*")
 	doc.Use(gzipMiddleware)
 	doc.GET("", echoSwagger.WrapHandler)
 
@@ -542,7 +542,7 @@ func (s *server) setRoutes() {
 func (s *server) setRoutesV3(v3 *echo.Group) {
 	if s.v3handler.widget != nil {
 		// The widget endpoint should not be blocked by auth
-		s.router.GET("/api/v3/widget/process/:id", s.v3handler.widget.Get)
+		s.router.GET("/engine/v3/widget/process/:id", s.v3handler.widget.Get)
 	}
 
 	// v3 Restreamer

@@ -182,7 +182,7 @@ func (j *jwt) ClearValidators() {
 }
 
 func (j *jwt) ErrorHandler(c echo.Context, err error) error {
-	if c.Request().URL.Path == "/api" {
+	if c.Request().URL.Path == "/engine" {
 		return c.JSON(http.StatusOK, api.MinimalAbout{
 			App:   app.Name,
 			Auths: j.Validators(),
