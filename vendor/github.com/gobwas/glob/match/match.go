@@ -1,6 +1,6 @@
 package match
 
-// todo common table of rune's length
+// TODO common table of rune's length
 
 import (
 	"fmt"

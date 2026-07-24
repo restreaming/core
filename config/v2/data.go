@@ -35,9 +35,8 @@ type Data struct {
 		Auto bool     `json:"auto"`
 	} `json:"host"`
 	API struct {
-		ReadOnly      bool   `json:"read_only"`
-		InternalToken string `json:"internal_token"`
-		Access        struct {
+		ReadOnly bool `json:"read_only"`
+		Access   struct {
 			HTTP struct {
 				Allow []string `json:"allow"`
 				Block []string `json:"block"`

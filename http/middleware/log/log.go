@@ -9,18 +9,17 @@ import (
 	"github.com/datarhei/core/v16/log"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
-
-type Skipper func(echo.Context) bool
 
 type Config struct {
 	// Skipper defines a function to skip middleware.
-	Skipper Skipper
+	Skipper middleware.Skipper
 	Logger  log.Logger
 }
 
 var DefaultConfig = Config{
-	Skipper: func(echo.Context) bool { return false },
+	Skipper: middleware.DefaultSkipper,
 	Logger:  log.New("HTTP"),
 }
 

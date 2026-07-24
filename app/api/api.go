@@ -21,10 +21,16 @@ import (
 	configvars "github.com/datarhei/core/v16/config/vars"
 	"github.com/datarhei/core/v16/ffmpeg"
 	"github.com/datarhei/core/v16/http"
+	"github.com/datarhei/core/v16/http/cache"
+	httpfs "github.com/datarhei/core/v16/http/fs"
+	"github.com/datarhei/core/v16/http/jwt"
+	"github.com/datarhei/core/v16/http/router"
 	"github.com/datarhei/core/v16/io/fs"
 	"github.com/datarhei/core/v16/log"
+	"github.com/datarhei/core/v16/math/rand"
 	"github.com/datarhei/core/v16/monitor"
 	"github.com/datarhei/core/v16/net"
+	"github.com/datarhei/core/v16/prometheus"
 	"github.com/datarhei/core/v16/restream"
 	restreamapp "github.com/datarhei/core/v16/restream/app"
 	"github.com/datarhei/core/v16/restream/replace"
@@ -68,10 +74,13 @@ type api struct {
 	rtmpserver    rtmp.Server
 	srtserver     srt.Server
 	metrics       monitor.HistoryMonitor
+	prom          prometheus.Metrics
 	service       service.Service
 	sessions      session.Registry
+	cache         cache.Cacher
 	mainserver    *gohttp.Server
 	sidecarserver *gohttp.Server
+	httpjwt       jwt.JWT
 	update        update.Checker
 	replacer      replace.Replacer
 
@@ -608,6 +617,48 @@ func (a *api) start() error {
 
 	a.restream = restream
 
+	var httpjwt jwt.JWT
+
+	if cfg.API.Auth.Enable {
+		secret := rand.String(32)
+		if len(cfg.API.Auth.JWT.Secret) != 0 {
+			secret = cfg.API.Auth.Username + cfg.API.Auth.Password + cfg.API.Auth.JWT.Secret
+		}
+
+		var err error
+		httpjwt, err = jwt.New(jwt.Config{
+			Realm:         app.Name,
+			Secret:        secret,
+			SkipLocalhost: cfg.API.Auth.DisableLocalhost,
+		})
+
+		if err != nil {
+			return fmt.Errorf("unable to create JWT provider: %w", err)
+		}
+
+		if validator, err := jwt.NewLocalValidator(cfg.API.Auth.Username, cfg.API.Auth.Password); err == nil {
+			if err := httpjwt.AddValidator(app.Name, validator); err != nil {
+				return fmt.Errorf("unable to add local JWT validator: %w", err)
+			}
+		} else {
+			return fmt.Errorf("unable to create local JWT validator: %w", err)
+		}
+
+		if cfg.API.Auth.Auth0.Enable {
+			for _, t := range cfg.API.Auth.Auth0.Tenants {
+				if validator, err := jwt.NewAuth0Validator(t.Domain, t.Audience, t.ClientID, t.Users); err == nil {
+					if err := httpjwt.AddValidator("https://"+t.Domain+"/", validator); err != nil {
+						return fmt.Errorf("unable to add Auth0 JWT validator: %w", err)
+					}
+				} else {
+					return fmt.Errorf("unable to create Auth0 JWT validator: %w", err)
+				}
+			}
+		}
+	}
+
+	a.httpjwt = httpjwt
+
 	metrics, err := monitor.NewHistory(monitor.HistoryConfig{
 		Enable:    cfg.Metrics.Enable,
 		Timerange: time.Duration(cfg.Metrics.Range) * time.Second,
@@ -632,6 +683,21 @@ func (a *api) start() error {
 	metrics.Register(monitor.NewSessionCollector(a.sessions, []string{}))
 
 	a.metrics = metrics
+
+	if cfg.Metrics.EnablePrometheus {
+		prom := prometheus.New()
+
+		prom.Register(prometheus.NewUptimeCollector(cfg.ID, metrics))
+		prom.Register(prometheus.NewCPUCollector(cfg.ID, metrics))
+		prom.Register(prometheus.NewMemCollector(cfg.ID, metrics))
+		prom.Register(prometheus.NewNetCollector(cfg.ID, metrics))
+		prom.Register(prometheus.NewDiskCollector(cfg.ID, metrics))
+		prom.Register(prometheus.NewFilesystemCollector(cfg.ID, metrics))
+		prom.Register(prometheus.NewRestreamCollector(cfg.ID, metrics))
+		prom.Register(prometheus.NewSessionCollector(cfg.ID, metrics))
+
+		a.prom = prom
+	}
 
 	if cfg.Service.Enable {
 		address := cfg.Address
@@ -683,6 +749,23 @@ func (a *api) start() error {
 		}
 
 		a.update = s
+	}
+
+	if cfg.Storage.Disk.Cache.Enable {
+		cache, err := cache.NewLRUCache(cache.LRUConfig{
+			TTL:             time.Duration(cfg.Storage.Disk.Cache.TTL) * time.Second,
+			MaxSize:         cfg.Storage.Disk.Cache.Size * 1024 * 1024,
+			MaxFileSize:     cfg.Storage.Disk.Cache.FileSize * 1024 * 1024,
+			AllowExtensions: cfg.Storage.Disk.Cache.Types.Allow,
+			BlockExtensions: cfg.Storage.Disk.Cache.Types.Block,
+			Logger:          a.log.logger.core.WithComponent("HTTPCache"),
+		})
+
+		if err != nil {
+			return fmt.Errorf("unable to create cache: %w", err)
+		}
+
+		a.cache = cache
 	}
 
 	var autocertManager *certmagic.Config
@@ -864,20 +947,78 @@ func (a *api) start() error {
 		iplimiter = limiter
 	}
 
+	router, err := router.New(cfg.Router.BlockedPrefixes, cfg.Router.Routes, cfg.Router.UIPath)
+	if err != nil {
+		return fmt.Errorf("incorrect routes provided: %w", err)
+	}
+
 	a.log.logger.main = a.log.logger.core.WithComponent(logcontext).WithField("address", cfg.Address)
 
+	httpfilesystems := []httpfs.FS{
+		{
+			Name:               a.diskfs.Name(),
+			Mountpoint:         "",
+			AllowWrite:         false,
+			EnableAuth:         false,
+			Username:           "",
+			Password:           "",
+			DefaultFile:        "index.html",
+			DefaultContentType: "text/html",
+			Gzip:               true,
+			Filesystem:         a.diskfs,
+			Cache:              a.cache,
+		},
+		{
+			Name:               a.memfs.Name(),
+			Mountpoint:         "/memfs",
+			AllowWrite:         true,
+			EnableAuth:         cfg.Storage.Memory.Auth.Enable,
+			Username:           cfg.Storage.Memory.Auth.Username,
+			Password:           cfg.Storage.Memory.Auth.Password,
+			DefaultFile:        "",
+			DefaultContentType: "application/data",
+			Gzip:               true,
+			Filesystem:         a.memfs,
+			Cache:              nil,
+		},
+	}
+
+	for _, s3 := range cfg.Storage.S3 {
+		httpfilesystems = append(httpfilesystems, httpfs.FS{
+			Name:               s3.Name,
+			Mountpoint:         s3.Mountpoint,
+			AllowWrite:         true,
+			EnableAuth:         s3.Auth.Enable,
+			Username:           s3.Auth.Username,
+			Password:           s3.Auth.Password,
+			DefaultFile:        "",
+			DefaultContentType: "application/data",
+			Gzip:               true,
+			Filesystem:         a.s3fs[s3.Name],
+			Cache:              a.cache,
+		})
+	}
+
 	serverConfig := http.Config{
-		Logger:    a.log.logger.main,
-		LogBuffer: a.log.buffer,
-		Restream:  a.restream,
-		Metrics:   a.metrics,
-		IPLimiter: iplimiter,
+		Logger:        a.log.logger.main,
+		LogBuffer:     a.log.buffer,
+		Restream:      a.restream,
+		Metrics:       a.metrics,
+		Prometheus:    a.prom,
+		MimeTypesFile: cfg.Storage.MimeTypes,
+		Filesystems:   httpfilesystems,
+		IPLimiter:     iplimiter,
+		Profiling:     cfg.Debug.Profiling,
 		Cors: http.CorsConfig{
 			Origins: cfg.Storage.CORS.Origins,
 		},
-		Sessions:      a.sessions,
-		ReadOnly:      cfg.API.ReadOnly,
-		InternalToken: cfg.API.InternalToken,
+		RTMP:     a.rtmpserver,
+		SRT:      a.srtserver,
+		JWT:      a.httpjwt,
+		Config:   a.config.store,
+		Sessions: a.sessions,
+		Router:   router,
+		ReadOnly: cfg.API.ReadOnly,
 	}
 
 	mainserverhandler, err := http.NewServer(serverConfig)
@@ -1157,6 +1298,11 @@ func (a *api) stop() {
 		return
 	}
 
+	// Stop JWT authentication
+	if a.httpjwt != nil {
+		a.httpjwt.ClearValidators()
+	}
+
 	if a.update != nil {
 		a.update.Stop()
 		a.update = nil
@@ -1184,6 +1330,17 @@ func (a *api) stop() {
 	if a.metrics != nil {
 		a.metrics.UnregisterAll()
 		a.metrics = nil
+	}
+
+	if a.prom != nil {
+		a.prom.UnregisterAll()
+		a.prom = nil
+	}
+
+	// Free the cached objects
+	if a.cache != nil {
+		a.cache.Purge()
+		a.cache = nil
 	}
 
 	// Free the S3 mounts
