@@ -42,6 +42,18 @@ func TestParserProgress(t *testing.T) {
 	require.Equal(t, wantP.Dup, p.Dup)
 }
 
+func TestParserProgressWithFFmpegLogLevel(t *testing.T) {
+	parser := New(Config{LogLines: 20}).(*parser)
+	parser.prelude.done = true
+
+	parser.Parse("[info] frame= 12 fps= 60 q=-1.0 size=128kB time=00:00:00.20 bitrate=5242kbits/s speed=1.0x drop=0 dup=0")
+
+	progress := parser.Progress()
+	require.Equal(t, uint64(12), progress.Frame)
+	require.Equal(t, uint64(131072), progress.Size)
+	require.Equal(t, 0.2, progress.Time)
+}
+
 func TestParserPrelude(t *testing.T) {
 	parser := New(Config{
 		LogLines:         20,

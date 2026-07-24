@@ -169,6 +169,8 @@ func New(config Config) Parser {
 }
 
 func (p *parser) Parse(line string) uint64 {
+	line = stripLogLevel(line)
+
 	isDefaultProgress := strings.HasPrefix(line, "frame=")
 	isFFmpegInputs := strings.HasPrefix(line, "ffmpeg.inputs:")
 	isFFmpegOutputs := strings.HasPrefix(line, "ffmpeg.outputs:")
@@ -394,6 +396,16 @@ func (p *parser) Parse(line string) uint64 {
 	}
 
 	return pFrames
+}
+
+func stripLogLevel(line string) string {
+	for _, level := range []string{"[info] ", "[warning] ", "[error] ", "[fatal] "} {
+		if strings.HasPrefix(line, level) {
+			return strings.TrimPrefix(line, level)
+		}
+	}
+
+	return line
 }
 
 func (p *parser) parseDefaultProgress(line string) error {
