@@ -257,26 +257,6 @@ func (d *Config) Validate(resetLogs bool) {
 
 	// Individual sanity checks
 
-	// If HTTP Auth is enabled, check that the username and password are set
-	if d.API.Auth.Enable {
-		if len(d.API.Auth.Username) == 0 || len(d.API.Auth.Password) == 0 {
-			d.vars.Log("error", "api.auth.enable", "api.auth.username and api.auth.password must be set")
-		}
-	}
-
-	// If Auth0 is enabled, check that domain, audience, and clientid are set
-	if d.API.Auth.Auth0.Enable {
-		if len(d.API.Auth.Auth0.Tenants) == 0 {
-			d.vars.Log("error", "api.auth.auth0.enable", "at least one tenants must be set")
-		}
-
-		for i, t := range d.API.Auth.Auth0.Tenants {
-			if len(t.Domain) == 0 || len(t.Audience) == 0 || len(t.ClientID) == 0 {
-				d.vars.Log("error", "api.auth.auth0.tenants", "domain, audience, and clientid must be set (tenant %d)", i)
-			}
-		}
-	}
-
 	// If TLS is enabled and Let's Encrypt is disabled, require certfile and keyfile
 	if d.TLS.Enable && !d.TLS.Auto {
 		if len(d.TLS.CertFile) == 0 || len(d.TLS.KeyFile) == 0 {

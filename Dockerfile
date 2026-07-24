@@ -16,6 +16,8 @@ RUN cd /dist/core && \
 
 FROM alpine:3.24
 
+RUN apk add --no-cache ffmpeg
+
 COPY --from=builder /dist/core/core /core/bin/core
 COPY --from=builder /dist/core/import /core/bin/import
 COPY --from=builder /dist/core/ffmigrate /core/bin/ffmigrate
