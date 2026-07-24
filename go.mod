@@ -1,8 +1,8 @@
 module github.com/datarhei/core/v16
 
-go 1.21.0
+go 1.26.0
 
-toolchain go1.22.1
+toolchain go1.26.5
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1

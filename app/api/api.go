@@ -236,11 +236,11 @@ func (a *api) Reload() error {
 			"description": v.Description,
 			"override":    v.Merged,
 		})
-		configlogger.Debug().Log(message)
+		configlogger.Debug().Log("%s", message)
 
 		switch level {
 		case "warn":
-			configlogger.Warn().Log(message)
+			configlogger.Warn().Log("%s", message)
 		case "error":
 			configlogger.Error().WithField("error", message).Log("")
 		default:
@@ -760,7 +760,7 @@ func (a *api) start() error {
 							logger.Error().WithFields(log.Fields{
 								"name":   p.Name,
 								"detail": p.Detail,
-							}).Log(p.Explanation)
+						}).Log("%s", p.Explanation)
 						}
 					*/
 					break

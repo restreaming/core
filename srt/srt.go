@@ -360,7 +360,7 @@ func (s *server) log(handler, action, resource, message string, client net.Addr)
 		"status":   action,
 		"resource": resource,
 		"client":   client.String(),
-	}).Log(message)
+	}).Log("%s", message)
 }
 
 type streamInfo struct {

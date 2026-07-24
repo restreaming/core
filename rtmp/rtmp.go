@@ -332,7 +332,7 @@ func (s *server) log(level log.Level, who, action, path, message string, client 
 		"action": action,
 		"path":   path,
 		"client": client.String(),
-	}).Log(message)
+	}).Log("%s", message)
 }
 
 // getToken returns the path and the token found in the URL. If the token

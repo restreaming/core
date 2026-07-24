@@ -1,9 +1,4 @@
-ARG GOLANG_IMAGE=golang:1.22-alpine3.19
-ARG BUILD_IMAGE=alpine:3.19
-
-# Cross-Compilation
-# https://www.docker.com/blog/faster-multi-platform-builds-dockerfile-cross-compilation-guide/
-FROM --platform=$BUILDPLATFORM $GOLANG_IMAGE AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine3.24 AS builder
 
 ARG TARGETOS TARGETARCH TARGETVARIANT
 ENV GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=$TARGETVARIANT
@@ -19,7 +14,7 @@ RUN cd /dist/core && \
 	make import && \
 	make ffmigrate
 
-FROM $BUILD_IMAGE
+FROM alpine:3.24
 
 COPY --from=builder /dist/core/core /core/bin/core
 COPY --from=builder /dist/core/import /core/bin/import
