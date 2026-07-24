@@ -965,6 +965,7 @@ func (a *api) start() error {
 		RTMP:          a.rtmpserver,
 		SRT:           a.srtserver,
 		InternalToken: os.Getenv("CORE_API_INTERNAL_TOKEN"),
+		Store:         a.config.store,
 		Sessions:      a.sessions,
 		ReadOnly:      cfg.API.ReadOnly,
 	}

@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"strings"
 
+	cfgstore "github.com/datarhei/core/v16/config/store"
 	"github.com/datarhei/core/v16/http/cache"
 	"github.com/datarhei/core/v16/http/errorhandler"
 	"github.com/datarhei/core/v16/http/fs"
@@ -77,6 +78,7 @@ type Config struct {
 	RTMP          rtmp.Server
 	SRT           srt.Server
 	InternalToken string
+	Store         cfgstore.Store
 	Cache         cache.Cacher
 	Sessions      session.RegistryReader
 	ReadOnly      bool
@@ -106,6 +108,7 @@ type server struct {
 		playout   *api.PlayoutHandler
 		rtmp      *api.RTMPHandler
 		srt       *api.SRTHandler
+		config    *api.ConfigHandler
 		session   *api.SessionHandler
 		widget    *api.WidgetHandler
 		resources *api.MetricsHandler
@@ -244,6 +247,10 @@ func NewServer(config Config) (Server, error) {
 
 	if config.InternalToken != "" {
 		s.middleware.internalToken = internalTokenMiddleware(config.InternalToken)
+	}
+
+	if config.Store != nil {
+		s.v3handler.config = api.NewConfig(config.Store)
 	}
 
 	if config.Sessions == nil {
@@ -517,6 +524,11 @@ func (s *server) setRoutesV3(v3 *echo.Group) {
 	// v3 SRT
 	if s.v3handler.srt != nil {
 		v3.GET("/srt", s.v3handler.srt.ListChannels)
+	}
+
+	// Read-only compatibility endpoint. Config writes stay in the control plane.
+	if s.v3handler.config != nil {
+		v3.GET("/config", s.v3handler.config.Get)
 	}
 
 	// v3 Session
