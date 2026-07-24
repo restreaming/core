@@ -10,6 +10,7 @@ import (
 	gonet "net"
 	gohttp "net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime/debug"
 	"sync"
@@ -23,11 +24,8 @@ import (
 	"github.com/datarhei/core/v16/http"
 	"github.com/datarhei/core/v16/http/cache"
 	httpfs "github.com/datarhei/core/v16/http/fs"
-	"github.com/datarhei/core/v16/http/jwt"
-	"github.com/datarhei/core/v16/http/router"
 	"github.com/datarhei/core/v16/io/fs"
 	"github.com/datarhei/core/v16/log"
-	"github.com/datarhei/core/v16/math/rand"
 	"github.com/datarhei/core/v16/monitor"
 	"github.com/datarhei/core/v16/net"
 	"github.com/datarhei/core/v16/prometheus"
@@ -80,7 +78,6 @@ type api struct {
 	cache         cache.Cacher
 	mainserver    *gohttp.Server
 	sidecarserver *gohttp.Server
-	httpjwt       jwt.JWT
 	update        update.Checker
 	replacer      replace.Replacer
 
@@ -617,48 +614,6 @@ func (a *api) start() error {
 
 	a.restream = restream
 
-	var httpjwt jwt.JWT
-
-	if cfg.API.Auth.Enable {
-		secret := rand.String(32)
-		if len(cfg.API.Auth.JWT.Secret) != 0 {
-			secret = cfg.API.Auth.Username + cfg.API.Auth.Password + cfg.API.Auth.JWT.Secret
-		}
-
-		var err error
-		httpjwt, err = jwt.New(jwt.Config{
-			Realm:         app.Name,
-			Secret:        secret,
-			SkipLocalhost: cfg.API.Auth.DisableLocalhost,
-		})
-
-		if err != nil {
-			return fmt.Errorf("unable to create JWT provider: %w", err)
-		}
-
-		if validator, err := jwt.NewLocalValidator(cfg.API.Auth.Username, cfg.API.Auth.Password); err == nil {
-			if err := httpjwt.AddValidator(app.Name, validator); err != nil {
-				return fmt.Errorf("unable to add local JWT validator: %w", err)
-			}
-		} else {
-			return fmt.Errorf("unable to create local JWT validator: %w", err)
-		}
-
-		if cfg.API.Auth.Auth0.Enable {
-			for _, t := range cfg.API.Auth.Auth0.Tenants {
-				if validator, err := jwt.NewAuth0Validator(t.Domain, t.Audience, t.ClientID, t.Users); err == nil {
-					if err := httpjwt.AddValidator("https://"+t.Domain+"/", validator); err != nil {
-						return fmt.Errorf("unable to add Auth0 JWT validator: %w", err)
-					}
-				} else {
-					return fmt.Errorf("unable to create Auth0 JWT validator: %w", err)
-				}
-			}
-		}
-	}
-
-	a.httpjwt = httpjwt
-
 	metrics, err := monitor.NewHistory(monitor.HistoryConfig{
 		Enable:    cfg.Metrics.Enable,
 		Timerange: time.Duration(cfg.Metrics.Range) * time.Second,
@@ -947,11 +902,6 @@ func (a *api) start() error {
 		iplimiter = limiter
 	}
 
-	router, err := router.New(cfg.Router.BlockedPrefixes, cfg.Router.Routes, cfg.Router.UIPath)
-	if err != nil {
-		return fmt.Errorf("incorrect routes provided: %w", err)
-	}
-
 	a.log.logger.main = a.log.logger.core.WithComponent(logcontext).WithField("address", cfg.Address)
 
 	httpfilesystems := []httpfs.FS{
@@ -1012,13 +962,11 @@ func (a *api) start() error {
 		Cors: http.CorsConfig{
 			Origins: cfg.Storage.CORS.Origins,
 		},
-		RTMP:     a.rtmpserver,
-		SRT:      a.srtserver,
-		JWT:      a.httpjwt,
-		Config:   a.config.store,
-		Sessions: a.sessions,
-		Router:   router,
-		ReadOnly: cfg.API.ReadOnly,
+		RTMP:          a.rtmpserver,
+		SRT:           a.srtserver,
+		InternalToken: os.Getenv("CORE_API_INTERNAL_TOKEN"),
+		Sessions:      a.sessions,
+		ReadOnly:      cfg.API.ReadOnly,
 	}
 
 	mainserverhandler, err := http.NewServer(serverConfig)
@@ -1296,11 +1244,6 @@ func (a *api) stop() {
 	if a.state == "idle" {
 		logger.Info().Log("Complete")
 		return
-	}
-
-	// Stop JWT authentication
-	if a.httpjwt != nil {
-		a.httpjwt.ClearValidators()
 	}
 
 	if a.update != nil {

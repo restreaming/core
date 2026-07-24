@@ -33,15 +33,11 @@ import (
 	"net/http"
 	"strings"
 
-	cfgstore "github.com/datarhei/core/v16/config/store"
 	"github.com/datarhei/core/v16/http/cache"
 	"github.com/datarhei/core/v16/http/errorhandler"
 	"github.com/datarhei/core/v16/http/fs"
-	"github.com/datarhei/core/v16/http/graph/resolver"
 	"github.com/datarhei/core/v16/http/handler"
 	api "github.com/datarhei/core/v16/http/handler/api"
-	"github.com/datarhei/core/v16/http/jwt"
-	"github.com/datarhei/core/v16/http/router"
 	"github.com/datarhei/core/v16/http/validator"
 	"github.com/datarhei/core/v16/log"
 	"github.com/datarhei/core/v16/monitor"
@@ -59,16 +55,10 @@ import (
 	mwiplimit "github.com/datarhei/core/v16/http/middleware/iplimit"
 	mwlog "github.com/datarhei/core/v16/http/middleware/log"
 	mwmime "github.com/datarhei/core/v16/http/middleware/mime"
-	mwredirect "github.com/datarhei/core/v16/http/middleware/redirect"
 	mwsession "github.com/datarhei/core/v16/http/middleware/session"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-
-	echoSwagger "github.com/swaggo/echo-swagger" // echo-swagger middleware
-
-	// Expose the API docs
-	_ "github.com/datarhei/core/v16/docs"
 )
 
 var ListenAndServe = http.ListenAndServe
@@ -86,11 +76,9 @@ type Config struct {
 	Cors          CorsConfig
 	RTMP          rtmp.Server
 	SRT           srt.Server
-	JWT           jwt.JWT
-	Config        cfgstore.Store
+	InternalToken string
 	Cache         cache.Cacher
 	Sessions      session.RegistryReader
-	Router        router.Router
 	ReadOnly      bool
 }
 
@@ -110,8 +98,6 @@ type server struct {
 		prometheus *handler.PrometheusHandler
 		profiling  *handler.ProfilingHandler
 		ping       *handler.PingHandler
-		graph      *api.GraphHandler
-		jwt        jwt.JWT
 	}
 
 	v3handler struct {
@@ -120,25 +106,19 @@ type server struct {
 		playout   *api.PlayoutHandler
 		rtmp      *api.RTMPHandler
 		srt       *api.SRTHandler
-		config    *api.ConfigHandler
 		session   *api.SessionHandler
 		widget    *api.WidgetHandler
 		resources *api.MetricsHandler
 	}
 
 	middleware struct {
-		iplimit    echo.MiddlewareFunc
-		log        echo.MiddlewareFunc
-		accessJWT  echo.MiddlewareFunc
-		refreshJWT echo.MiddlewareFunc
-		cors       echo.MiddlewareFunc
-		cache      echo.MiddlewareFunc
-		session    echo.MiddlewareFunc
-		hlsrewrite echo.MiddlewareFunc
-	}
-
-	gzip struct {
-		mimetypes []string
+		iplimit       echo.MiddlewareFunc
+		log           echo.MiddlewareFunc
+		internalToken echo.MiddlewareFunc
+		cors          echo.MiddlewareFunc
+		cache         echo.MiddlewareFunc
+		session       echo.MiddlewareFunc
+		hlsrewrite    echo.MiddlewareFunc
 	}
 
 	filesystems map[string]*filesystem
@@ -146,6 +126,10 @@ type server struct {
 	router        *echo.Echo
 	mimeTypesFile string
 	profiling     bool
+
+	gzip struct {
+		mimetypes []string
+	}
 
 	readOnly bool
 }
@@ -212,17 +196,7 @@ func NewServer(config Config) (Server, error) {
 		s.logger = log.New("HTTP")
 	}
 
-	if config.JWT == nil {
-		s.handler.about = api.NewAbout(
-			config.Restream,
-			[]string{},
-		)
-	} else {
-		s.handler.about = api.NewAbout(
-			config.Restream,
-			config.JWT.Validators(),
-		)
-	}
+	s.handler.about = api.NewAbout(config.Restream, []string{})
 
 	s.v3handler.log = api.NewLog(
 		config.LogBuffer,
@@ -268,16 +242,8 @@ func NewServer(config Config) (Server, error) {
 		)
 	}
 
-	if config.Config != nil {
-		s.v3handler.config = api.NewConfig(
-			config.Config,
-		)
-	}
-
-	if config.JWT != nil {
-		s.handler.jwt = config.JWT
-		s.middleware.accessJWT = config.JWT.AccessMiddleware()
-		s.middleware.refreshJWT = config.JWT.RefreshMiddleware()
+	if config.InternalToken != "" {
+		s.middleware.internalToken = internalTokenMiddleware(config.InternalToken)
 	}
 
 	if config.Sessions == nil {
@@ -314,12 +280,7 @@ func NewServer(config Config) (Server, error) {
 		s.middleware.cors = middleware
 	}
 
-	s.handler.graph = api.NewGraph(resolver.Resolver{
-		Restream:  config.Restream,
-		Monitor:   config.Metrics,
-		LogBuffer: config.LogBuffer,
-	}, "/engine/graph/query")
-
+	s.router = echo.New()
 	s.gzip.mimetypes = []string{
 		"text/plain",
 		"text/html",
@@ -329,8 +290,6 @@ func NewServer(config Config) (Server, error) {
 		"application/vnd.apple.mpegurl",
 		"image/svg+xml",
 	}
-
-	s.router = echo.New()
 	s.router.HTTPErrorHandler = errorhandler.HTTPErrorHandler
 	s.router.Validator = validator.New()
 	s.router.Use(s.middleware.log)
@@ -354,45 +313,6 @@ func NewServer(config Config) (Server, error) {
 		s.router.Use(s.middleware.cors)
 	}
 
-	// Add static routes
-	if path, target := config.Router.StaticRoute(); len(target) != 0 {
-		group := s.router.Group(path)
-		group.Use(middleware.AddTrailingSlashWithConfig(middleware.TrailingSlashConfig{
-			Skipper: func(c echo.Context) bool {
-				return path != c.Request().URL.Path
-			},
-			RedirectCode: 301,
-		}))
-		group.Use(middleware.StaticWithConfig(middleware.StaticConfig{
-			Skipper:    middleware.DefaultSkipper,
-			Root:       target,
-			Index:      "index.html",
-			IgnoreBase: true,
-		}))
-	}
-
-	s.router.Use(mwredirect.NewWithConfig(mwredirect.Config{
-		Redirects: config.Router.FileRoutes(),
-	}))
-
-	for prefix, target := range config.Router.DirRoutes() {
-		group := s.router.Group(prefix)
-		group.Use(middleware.AddTrailingSlashWithConfig(middleware.TrailingSlashConfig{
-			Skipper: func(prefix string) func(c echo.Context) bool {
-				return func(c echo.Context) bool {
-					return prefix != c.Request().URL.Path
-				}
-			}(prefix),
-			RedirectCode: 301,
-		}))
-		group.Use(middleware.StaticWithConfig(middleware.StaticConfig{
-			Skipper:    middleware.DefaultSkipper,
-			Root:       target,
-			Index:      "index.html",
-			IgnoreBase: true,
-		}))
-	}
-
 	s.setRoutes()
 
 	return s, nil
@@ -403,34 +323,18 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) setRoutes() {
-	gzipMiddleware := mwgzip.NewWithConfig(mwgzip.Config{
-		Level:     mwgzip.BestSpeed,
-		MinLength: 1000,
-		Skipper:   mwgzip.ContentTypeSkipper(nil),
-	})
-
-	// API router grouo
 	api := s.router.Group("/engine")
 
 	if s.middleware.iplimit != nil {
 		api.Use(s.middleware.iplimit)
 	}
 
-	if s.middleware.accessJWT != nil {
-		// Enable JWT auth
-		api.Use(s.middleware.accessJWT)
-
-		// The login endpoint should not be blocked by auth
-		s.router.POST("/engine/login", s.handler.jwt.LoginHandler)
-		s.router.GET("/engine/login/refresh", s.handler.jwt.RefreshHandler, s.middleware.refreshJWT)
+	if s.middleware.internalToken != nil {
+		api.Use(s.middleware.internalToken)
 	}
 
 	api.GET("", s.handler.about.About)
-
-	// Swagger API documentation router group
-	doc := s.router.Group("/engine/swagger/*")
-	doc.Use(gzipMiddleware)
-	doc.GET("", echoSwagger.WrapHandler)
+	api.GET("/ping", s.handler.ping.Ping)
 
 	// Mount filesystems
 	for _, filesystem := range s.filesystems {
@@ -520,21 +424,8 @@ func (s *server) setRoutes() {
 		s.handler.profiling.Register(prof)
 	}
 
-	// GraphQL
-	graphql := api.Group("/graph")
-	graphql.Use(gzipMiddleware)
-
-	graphql.GET("", s.handler.graph.Playground)
-	graphql.POST("/query", s.handler.graph.Query)
-
 	// APIv3 router group
 	v3 := api.Group("/v3")
-
-	if s.handler.jwt != nil {
-		v3.Use(s.middleware.accessJWT)
-	}
-
-	v3.Use(gzipMiddleware)
 
 	s.setRoutesV3(v3)
 }
@@ -626,16 +517,6 @@ func (s *server) setRoutesV3(v3 *echo.Group) {
 	// v3 SRT
 	if s.v3handler.srt != nil {
 		v3.GET("/srt", s.v3handler.srt.ListChannels)
-	}
-
-	// v3 Config
-	if s.v3handler.config != nil {
-		v3.GET("/config", s.v3handler.config.Get)
-
-		if !s.readOnly {
-			v3.PUT("/config", s.v3handler.config.Set)
-			v3.GET("/config/reload", s.v3handler.config.Reload)
-		}
 	}
 
 	// v3 Session
