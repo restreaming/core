@@ -175,11 +175,20 @@ func (r *restream) Start() {
 		r.lock.Lock()
 		defer r.lock.Unlock()
 
-		for id, t := range r.tasks {
-			if t.process.Order == "start" {
+		// Start source/ingest processes before memory-filesystem consumers such
+		// as snapshots. Map iteration order is undefined, and starting a
+		// snapshot first can race the creation of its HLS input playlist.
+		for pass := 0; pass < 2; pass++ {
+			for id, t := range r.tasks {
+				if t.process.Order != "start" || hasMemoryFilesystemInput(t.config) != (pass == 1) {
+					continue
+				}
+
 				r.startProcess(id)
 			}
+		}
 
+		for id, t := range r.tasks {
 			// The filesystem cleanup rules can be set
 			r.setCleanup(id, t.config)
 		}
@@ -354,7 +363,7 @@ func (r *restream) load() error {
 
 		ffmpeg, err := r.ffmpeg.New(ffmpeg.ProcessConfig{
 			Reconnect:      t.config.Reconnect,
-			ReconnectDelay: time.Duration(t.config.ReconnectDelay) * time.Second,
+			ReconnectDelay: runtimeReconnectDelay(t.config),
 			StaleTimeout:   time.Duration(t.config.StaleTimeout) * time.Second,
 			LimitCPU:       t.config.LimitCPU,
 			LimitMemory:    t.config.LimitMemory,
@@ -497,7 +506,7 @@ func (r *restream) createTask(config *app.Config) (*task, error) {
 
 	ffmpeg, err := r.ffmpeg.New(ffmpeg.ProcessConfig{
 		Reconnect:      t.config.Reconnect,
-		ReconnectDelay: time.Duration(t.config.ReconnectDelay) * time.Second,
+		ReconnectDelay: runtimeReconnectDelay(t.config),
 		StaleTimeout:   time.Duration(t.config.StaleTimeout) * time.Second,
 		LimitCPU:       t.config.LimitCPU,
 		LimitMemory:    t.config.LimitMemory,
@@ -569,6 +578,25 @@ func removeDuplicateRTMPOutputs(config *app.Config) {
 			config.Output[i].Address = strings.Join(filtered, "|")
 		}
 	}
+}
+
+func hasMemoryFilesystemInput(config *app.Config) bool {
+	for _, input := range config.Input {
+		if strings.Contains(input.Address, "/memfs/") || strings.Contains(input.Address, "/mem/") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func runtimeReconnectDelay(config *app.Config) time.Duration {
+	delay := time.Duration(config.ReconnectDelay) * time.Second
+	if hasMemoryFilesystemInput(config) && delay > 5*time.Second {
+		return 5 * time.Second
+	}
+
+	return delay
 }
 
 func (r *restream) setCleanup(id string, config *app.Config) {
@@ -1216,6 +1244,7 @@ func (r *restream) reloadProcess(id string) error {
 	t.config = t.process.Config.Clone()
 
 	resolvePlaceholders(t.config, r.replace)
+	removeDuplicateRTMPOutputs(t.config)
 
 	err := r.resolveAddresses(r.tasks, t.config)
 	if err != nil {
@@ -1244,7 +1273,7 @@ func (r *restream) reloadProcess(id string) error {
 
 	ffmpeg, err := r.ffmpeg.New(ffmpeg.ProcessConfig{
 		Reconnect:      t.config.Reconnect,
-		ReconnectDelay: time.Duration(t.config.ReconnectDelay) * time.Second,
+		ReconnectDelay: runtimeReconnectDelay(t.config),
 		StaleTimeout:   time.Duration(t.config.StaleTimeout) * time.Second,
 		LimitCPU:       t.config.LimitCPU,
 		LimitMemory:    t.config.LimitMemory,
@@ -1296,7 +1325,7 @@ func (r *restream) GetProcessState(id string) (*app.State, error) {
 	copy(state.Command, task.command)
 
 	if state.Order == "start" && !task.ffmpeg.IsRunning() && task.config.Reconnect {
-		state.Reconnect = float64(task.config.ReconnectDelay) - state.Duration
+		state.Reconnect = runtimeReconnectDelay(task.config).Seconds() - state.Duration
 
 		if state.Reconnect < 0 {
 			state.Reconnect = 0
