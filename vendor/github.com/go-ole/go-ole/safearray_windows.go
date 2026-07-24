@@ -41,7 +41,7 @@ var (
 // safeArrayAccessData returns raw array pointer.
 //
 // AKA: SafeArrayAccessData in Windows API.
-// TODO: Test
+// Todo: Test
 func safeArrayAccessData(safearray *SafeArray) (element uintptr, err error) {
 	err = convertHresultToError(
 		procSafeArrayAccessData.Call(

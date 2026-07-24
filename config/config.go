@@ -161,6 +161,7 @@ func (d *Config) init() {
 
 	// API
 	d.vars.Register(value.NewBool(&d.API.ReadOnly, false), "api.read_only", "CORE_API_READ_ONLY", nil, "Allow only ready only access to the API", false, false)
+	d.vars.Register(value.NewString(&d.API.InternalToken, ""), "api.internal_token", "CORE_API_INTERNAL_TOKEN", nil, "Bearer token for the internal control-plane API", false, true)
 	d.vars.Register(value.NewCIDRList(&d.API.Access.HTTP.Allow, []string{}, ","), "api.access.http.allow", "CORE_API_ACCESS_HTTP_ALLOW", nil, "List of IPs in CIDR notation (HTTP traffic)", false, false)
 	d.vars.Register(value.NewCIDRList(&d.API.Access.HTTP.Block, []string{}, ","), "api.access.http.block", "CORE_API_ACCESS_HTTP_BLOCK", nil, "List of IPs in CIDR notation (HTTP traffic)", false, false)
 	d.vars.Register(value.NewCIDRList(&d.API.Access.HTTPS.Allow, []string{}, ","), "api.access.https.allow", "CORE_API_ACCESS_HTTPS_ALLOW", nil, "List of IPs in CIDR notation (HTTPS traffic)", false, false)

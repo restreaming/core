@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"net/http"
@@ -8,17 +9,18 @@ import (
 	"github.com/datarhei/core/v16/session"
 
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 )
+
+type Skipper func(echo.Context) bool
 
 type HTTPConfig struct {
 	// Skipper defines a function to skip middleware.
-	Skipper   middleware.Skipper
+	Skipper   Skipper
 	Collector session.Collector
 }
 
 var DefaultHTTPConfig = HTTPConfig{
-	Skipper:   middleware.DefaultSkipper,
+	Skipper:   func(echo.Context) bool { return false },
 	Collector: session.NewNullCollector(),
 }
 
@@ -89,6 +91,12 @@ func NewHTTPWithConfig(config HTTPConfig) echo.MiddlewareFunc {
 type fakeReader struct {
 	reader io.ReadCloser
 	size   int64
+}
+
+func headerSize(header http.Header) int64 {
+	var buffer bytes.Buffer
+	header.Write(&buffer)
+	return int64(buffer.Len())
 }
 
 func (r *fakeReader) Read(b []byte) (int, error) {
